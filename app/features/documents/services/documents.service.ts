@@ -9,10 +9,11 @@ class DocumentsService {
     return apiClient.get("/documents")
   }
 
-  async uploadDocument(file: File): Promise<IngestResponse> {
+  async uploadDocument(file: File, type: string = "docs"): Promise<IngestResponse> {
     const formData = new FormData()
 
     formData.append("file", file)
+    formData.append("type", type)
 
     return apiClient.postFormData("/ingest", formData)
   }

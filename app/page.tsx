@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react"
 import DocumentUpload from "@/features/documents/components/document-upload"
 import DocumentList from "@/features/documents/components/document-list"
 import ChatPanel from "@/features/chat/components/chat-panel"
+import SessionManager from "@/features/sessions/components/session-manager"
 
 import { documentsService } from "@/features/documents/services/documents.service"
 import { chatService } from "@/features/chat/services/chat.service"
@@ -37,6 +38,14 @@ export default function Home() {
     setSessionId(newSessionId)
   }, [])
 
+  useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem("docmind_session_id", sessionId)
+      // Aquí podrías cargar mensajes previos de la sesión
+      // loadSessionMessages(sessionId)
+    }
+  }, [sessionId])
+
   async function loadDocs() {
     setIsLoadingDocuments(true)
 
@@ -61,11 +70,11 @@ export default function Home() {
     )
   }
 
-  async function upload(file: File) {
+  async function upload(file: File, type: string = "docs") {
     setIsUploading(true)
 
     try {
-      await documentsService.uploadDocument(file)
+      await documentsService.uploadDocument(file, type)
       await loadDocs()
     } catch (error) {
       console.error(error)
@@ -244,8 +253,15 @@ export default function Home() {
                 </p>
               </div>
 
-              <div className="hidden rounded-2xl border border-[#26324A] bg-[#182235] px-4 py-2 text-xs text-[#A7B4CE] md:block">
-                IA local · FastAPI · Ollama
+              <div className="flex items-center gap-3">
+                <SessionManager
+                  currentSessionId={sessionId}
+                  onSessionChange={setSessionId}
+                />
+
+                <div className="hidden rounded-2xl border border-[#26324A] bg-[#182235] px-4 py-2 text-xs text-[#A7B4CE] md:block">
+                  IA local · FastAPI · Ollama
+                </div>
               </div>
             </div>
 
