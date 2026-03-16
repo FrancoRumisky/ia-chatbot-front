@@ -2,14 +2,17 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
 
 export class ApiClient {
+  readonly baseURL = API_URL
+
   async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(`${this.baseURL}${path}`, {
       method: "GET",
       cache: "no-store",
     })
 
     if (!res.ok) {
-      throw new Error("API error")
+      const errorText = await res.text()
+      throw new Error(`GET ${path} failed: ${res.status} - ${errorText}`)
     }
 
     return res.json()
@@ -19,7 +22,7 @@ export class ApiClient {
     path: string,
     body: TRequest
   ): Promise<TResponse> {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(`${this.baseURL}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -28,7 +31,8 @@ export class ApiClient {
     })
 
     if (!res.ok) {
-      throw new Error("API error")
+      const errorText = await res.text()
+      throw new Error(`POST ${path} failed: ${res.status} - ${errorText}`)
     }
 
     return res.json()
@@ -38,13 +42,14 @@ export class ApiClient {
     path: string,
     formData: FormData
   ): Promise<TResponse> {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(`${this.baseURL}${path}`, {
       method: "POST",
       body: formData,
     })
 
     if (!res.ok) {
-      throw new Error("API error")
+      const errorText = await res.text()
+      throw new Error(`POST ${path} failed: ${res.status} - ${errorText}`)
     }
 
     return res.json()

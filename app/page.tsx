@@ -1,17 +1,26 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
-import DocumentUpload from "@/features/documents/components/document-upload"
-import DocumentList from "@/features/documents/components/document-list"
 import ChatPanel from "@/features/chat/components/chat-panel"
-import SessionManager from "@/features/sessions/components/session-manager"
+import Sidebar from "@/components/sidebar/Sidebar"
 
 import { documentsService } from "@/features/documents/services/documents.service"
 import { chatService } from "@/features/chat/services/chat.service"
+import { sessionsService } from "@/features/sessions/services/sessions.service"
 
 import type { DocumentItem } from "@/features/documents/types/documents.types"
 import type { ChatMessage } from "@/features/chat/types/chat.types"
+
+function mapSessionMessagesToChatMessages(
+  messages: Array<{ role: "user" | "assistant"; content: string }>
+): ChatMessage[] {
+  return messages.map((message, index) => ({
+    id: `${message.role}-${index}-${crypto.randomUUID()}`,
+    role: message.role,
+    content: message.content,
+  }))
+}
 
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -22,6 +31,9 @@ export default function Home() {
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [isLoadingSession, setIsLoadingSession] = useState(false)
+
+  const previousSessionIdRef = useRef<string | null>(null)
 
   const hasSelectedDocs = useMemo(() => selectedDocs.length > 0, [selectedDocs])
 
@@ -38,12 +50,32 @@ export default function Home() {
     setSessionId(newSessionId)
   }, [])
 
-  useEffect(() => {
-    if (sessionId) {
-      localStorage.setItem("docmind_session_id", sessionId)
-      // Aquí podrías cargar mensajes previos de la sesión
-      // loadSessionMessages(sessionId)
+  async function loadSessionData(targetSessionId: string) {
+    setIsLoadingSession(true)
+
+    try {
+      const sessionData = await sessionsService.getSession(targetSessionId)
+
+      setMessages(mapSessionMessagesToChatMessages(sessionData.messages))
+      setSelectedDocs(sessionData.document_ids ?? [])
+    } catch (error) {
+      console.error("Error loading session data:", error)
+      setMessages([])
+      setSelectedDocs([])
+    } finally {
+      setIsLoadingSession(false)
     }
+  }
+
+  useEffect(() => {
+    if (!sessionId) return
+
+    localStorage.setItem("docmind_session_id", sessionId)
+
+    if (previousSessionIdRef.current === sessionId) return
+
+    previousSessionIdRef.current = sessionId
+    void loadSessionData(sessionId)
   }, [sessionId])
 
   async function loadDocs() {
@@ -168,6 +200,16 @@ export default function Home() {
                 <span className="h-2 w-2 rounded-full bg-[#35D6C1]" />
                 RAG · PDF · Local AI
               </div>
+              <div className="mb-5 rounded-2xl border border-[#3A465F] bg-[#182235] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#35D6C1]">
+                Modelo en fase de prueba
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[#A7B4CE]">
+                Las respuestas pueden demorar algunos segundos y, en ciertos casos, el
+                asistente puede no encontrar suficiente contexto en los documentos para
+                responder con precisión.
+                </p>
+              </div>
 
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
                 DocMind AI
@@ -192,76 +234,33 @@ export default function Home() {
         </header>
 
         <div className="grid flex-1 grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
-          <aside className="rounded-[28px] border border-[#26324A] bg-[linear-gradient(180deg,#121A2B_0%,#101827_100%)] p-5 shadow-[0_20px_40px_rgba(0,0,0,0.18)]">
-            <div className="mb-5">
-              <h2 className="text-lg font-semibold text-white">Documentos</h2>
-              <p className="mt-1 text-sm text-[#A7B4CE]">
-                Cargá archivos PDF y elegí cuáles querés consultar.
-              </p>
-            </div>
-
-            <div className="space-y-5">
-              <div>
-                {isUploading ? (
-                  <div className="rounded-3xl border border-[#26324A] bg-[#182235] p-6 text-center text-sm text-[#A7B4CE]">
-                    Subiendo documento...
-                  </div>
-                ) : (
-                  <DocumentUpload onUpload={upload} />
-                )}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-[0.18em] text-[#6F7C96]">
-                  Archivos cargados
-                </p>
-
-                <button
-                  onClick={() => void loadDocs()}
-                  className="rounded-xl border border-[#26324A] px-3 py-2 text-xs text-[#A7B4CE] transition hover:border-[#4F8CFF] hover:text-white"
-                >
-                  Recargar
-                </button>
-              </div>
-
-              {isLoadingDocuments ? (
-                <div className="rounded-2xl border border-[#26324A] bg-[#182235] p-4 text-sm text-[#A7B4CE]">
-                  Cargando documentos...
-                </div>
-              ) : documents.length === 0 ? (
-                <div className="rounded-2xl border border-[#26324A] bg-[#182235] p-4 text-sm text-[#A7B4CE]">
-                  Todavía no hay documentos disponibles.
-                </div>
-              ) : (
-                <DocumentList
-                  documents={documents}
-                  selected={selectedDocs}
-                  toggle={toggleDoc}
-                />
-              )}
-            </div>
-          </aside>
+          <Sidebar
+            currentSessionId={sessionId}
+            onSessionChange={setSessionId}
+            documents={documents}
+            selectedDocs={selectedDocs}
+            toggleDoc={toggleDoc}
+            onUpload={upload}
+            isUploading={isUploading}
+            isLoadingDocuments={isLoadingDocuments}
+            loadDocs={loadDocs}
+          />
 
           <section className="flex min-h-[70vh] flex-col rounded-[28px] border border-[#26324A] bg-[linear-gradient(180deg,#121A2B_0%,#101827_100%)] p-5 shadow-[0_20px_40px_rgba(0,0,0,0.18)]">
             <div className="mb-5 flex items-center justify-between border-b border-[#26324A] pb-4">
               <div>
                 <h2 className="text-lg font-semibold text-white">Chat de consulta</h2>
                 <p className="mt-1 text-sm text-[#A7B4CE]">
-                  {hasSelectedDocs
+                  {isLoadingSession
+                    ? "Cargando sesión..."
+                    : hasSelectedDocs
                     ? `${selectedDocs.length} documento(s) seleccionados`
                     : "Seleccioná al menos un documento para comenzar"}
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
-                <SessionManager
-                  currentSessionId={sessionId}
-                  onSessionChange={setSessionId}
-                />
-
-                <div className="hidden rounded-2xl border border-[#26324A] bg-[#182235] px-4 py-2 text-xs text-[#A7B4CE] md:block">
-                  IA local · FastAPI · Ollama
-                </div>
+              <div className="hidden rounded-2xl border border-[#26324A] bg-[#182235] px-4 py-2 text-xs text-[#A7B4CE] md:block">
+                IA local · FastAPI · Ollama
               </div>
             </div>
 
@@ -286,7 +285,13 @@ export default function Home() {
 
                   <button
                     onClick={() => void send()}
-                    disabled={isSending || !question.trim() || !hasSelectedDocs || !sessionId}
+                    disabled={
+                      isSending ||
+                      isLoadingSession ||
+                      !question.trim() ||
+                      !hasSelectedDocs ||
+                      !sessionId
+                    }
                     className="rounded-2xl bg-[#4F8CFF] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#3D78E6] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isSending ? "Consultando..." : "Enviar pregunta"}

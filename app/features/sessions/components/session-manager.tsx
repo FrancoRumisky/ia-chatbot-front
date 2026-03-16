@@ -1,90 +1,104 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { sessionsService, type SessionItem } from "../services/sessions.service";
+import { useEffect, useMemo, useState } from "react"
+import SidebarSection from "@/components/sidebar/SidebarSection"
+import SidebarSessionItem from "@/components/sidebar/SidebarSessionItem"
+import { sessionsService, type SessionItem } from "../services/sessions.service"
 
 interface Props {
-  currentSessionId: string | null;
-  onSessionChange: (sessionId: string) => void;
+  currentSessionId: string | null
+  onSessionChange: (sessionId: string) => void
 }
 
-export default function SessionManager({ currentSessionId, onSessionChange }: Props) {
-  const [sessions, setSessions] = useState<SessionItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
+function sortSessionsByUpdatedAt(sessions: SessionItem[]): SessionItem[] {
+  return [...sessions].sort((a, b) => {
+    const aDate = new Date(a.last_updated).getTime()
+    const bDate = new Date(b.last_updated).getTime()
+    return bDate - aDate
+  })
+}
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
+export default function SessionManager({
+  currentSessionId,
+  onSessionChange,
+}: Props) {
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [isLoading, setIsLoading] = useState(false)
 
   async function loadSessions() {
-    setIsLoading(true);
+    setIsLoading(true)
+
     try {
-      const res = await sessionsService.listSessions();
-      setSessions(res.sessions);
+      const response = await sessionsService.listSessions()
+
+      const enrichedSessions = await Promise.all(
+        response.sessions.map(async (session) => {
+          try {
+            const sessionData = await sessionsService.getSession(session.id)
+            const messageCount = sessionData.messages.length
+
+            return {
+              ...session,
+              message_count: messageCount,
+              last_updated:
+                messageCount > 0 ? new Date().toISOString() : session.last_updated,
+            }
+          } catch (error) {
+            console.error(`Error loading session ${session.id}:`, error)
+            return session
+          }
+        })
+      )
+
+      setSessions(sortSessionsByUpdatedAt(enrichedSessions))
     } catch (error) {
-      console.error("Error loading sessions:", error);
+      console.error("Error loading sessions:", error)
+      setSessions([])
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
   }
 
-  function createNewSession() {
-    const newSessionId = crypto.randomUUID();
-    onSessionChange(newSessionId);
-    setShowDropdown(false);
-  }
+  useEffect(() => {
+    void loadSessions()
+  }, [currentSessionId])
 
-  const currentSession = sessions.find(s => s.id === currentSessionId);
+  const hasSessions = useMemo(() => sessions.length > 0, [sessions])
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setShowDropdown(!showDropdown)}
-        className="flex items-center gap-2 rounded-lg border border-[#26324A] bg-[#182235] px-3 py-2 text-sm text-white hover:border-[#4F8CFF] focus:outline-none"
-      >
-        <span>💬</span>
-        <span className="max-w-32 truncate">
-          {currentSession ? `Sesión ${currentSession.id.slice(0, 8)}` : "Nueva sesión"}
-        </span>
-        <span className="text-xs">▼</span>
-      </button>
-
-      {showDropdown && (
-        <div className="absolute top-full mt-1 w-64 rounded-lg border border-[#26324A] bg-[#182235] p-2 shadow-lg z-10">
-          <button
-            onClick={createNewSession}
-            className="w-full rounded px-3 py-2 text-left text-sm text-[#35D6C1] hover:bg-[#1C2940]"
-          >
-            ➕ Nueva sesión
-          </button>
-
-          <div className="my-2 border-t border-[#26324A]"></div>
-
-          <div className="max-h-40 overflow-y-auto">
-            {sessions.map((session) => (
-              <button
-                key={session.id}
-                onClick={() => {
-                  onSessionChange(session.id);
-                  setShowDropdown(false);
-                }}
-                className={`w-full rounded px-3 py-2 text-left text-sm hover:bg-[#1C2940] ${
-                  session.id === currentSessionId ? "bg-[#4F8CFF] text-white" : "text-white"
-                }`}
-              >
-                <div className="flex justify-between items-center">
-                  <span className="truncate">Sesión {session.id.slice(0, 8)}</span>
-                  <span className="text-xs text-[#A7B4CE]">{session.message_count} msgs</span>
-                </div>
-                <div className="text-xs text-[#A7B4CE]">
-                  {new Date(session.last_updated).toLocaleDateString()}
-                </div>
-              </button>
-            ))}
-          </div>
+    <SidebarSection
+      title="Sesiones"
+      action={
+        <button
+          type="button"
+          onClick={() => void loadSessions()}
+          className="rounded-xl border border-[#26324A] px-2.5 py-1.5 text-[11px] text-[#A7B4CE] transition hover:border-[#4F8CFF] hover:text-white"
+        >
+          Recargar
+        </button>
+      }
+    >
+      {isLoading ? (
+        <div className="rounded-2xl border border-[#26324A] bg-[#182235] p-4 text-sm text-[#A7B4CE]">
+          Cargando sesiones...
+        </div>
+      ) : !hasSessions ? (
+        <div className="rounded-2xl border border-[#26324A] bg-[#182235] p-4 text-sm text-[#A7B4CE]">
+          No hay sesiones guardadas todavía.
+        </div>
+      ) : (
+        <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+          {sessions.map((session) => (
+            <SidebarSessionItem
+              key={session.id}
+              session={session}
+              isActive={session.id === currentSessionId}
+              onClick={() => onSessionChange(session.id)}
+            />
+          ))}
         </div>
       )}
-    </div>
-  );
+    </SidebarSection>
+  )
 }
+
