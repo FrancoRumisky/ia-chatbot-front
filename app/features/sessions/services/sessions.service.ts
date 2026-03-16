@@ -62,8 +62,11 @@ function normalizeSession(raw: unknown): SessionItem | null {
 }
 
 class SessionsService {
-  async listSessions(): Promise<SessionsResponse> {
-    const response = await apiClient.get<unknown>("/sessions")
+  async listSessions(userId: string): Promise<SessionsResponse> {
+    if (!userId) {
+      throw new Error("user_id is required")
+    }
+    const response = await apiClient.get<unknown>(`/sessions?user_id=${encodeURIComponent(userId)}`)
 
     if (
       response &&
@@ -80,7 +83,7 @@ class SessionsService {
         total_sessions:
           typeof (response as { total_sessions?: unknown }).total_sessions ===
           "number"
-            ? (response as { total_sessions: number }).total_sessions
+            ? (response as unknown as { total_sessions: number }).total_sessions
             : sessions.length,
       }
     }
@@ -96,8 +99,11 @@ class SessionsService {
     return { sessions: [], total_sessions: 0 }
   }
 
-  async getSession(sessionId: string): Promise<SessionData> {
-    return apiClient.get<SessionData>(`/sessions/${sessionId}`)
+  async getSession(sessionId: string, userId: string): Promise<SessionData> {
+    if (!userId) {
+      throw new Error("user_id is required")
+    }
+    return apiClient.get<SessionData>(`/sessions/${sessionId}?user_id=${encodeURIComponent(userId)}`)
   }
 }
 

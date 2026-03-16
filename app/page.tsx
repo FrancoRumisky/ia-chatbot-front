@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import ChatPanel from "@/features/chat/components/chat-panel"
 import Sidebar from "@/components/sidebar/Sidebar"
@@ -8,6 +8,7 @@ import Sidebar from "@/components/sidebar/Sidebar"
 import { documentsService } from "@/features/documents/services/documents.service"
 import { chatService } from "@/features/chat/services/chat.service"
 import { sessionsService } from "@/features/sessions/services/sessions.service"
+import { getOrCreateUserId } from "@/shared/lib/auth/user-id"
 
 import type { DocumentItem } from "@/features/documents/types/documents.types"
 import type { ChatMessage } from "@/features/chat/types/chat.types"
@@ -23,6 +24,7 @@ function mapSessionMessagesToChatMessages(
 }
 
 export default function Home() {
+  const [userId, setUserId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [selectedDocs, setSelectedDocs] = useState<string[]>([])
@@ -38,6 +40,11 @@ export default function Home() {
   const hasSelectedDocs = useMemo(() => selectedDocs.length > 0, [selectedDocs])
 
   useEffect(() => {
+    const id = getOrCreateUserId()
+    setUserId(id)
+  }, [])
+
+  useEffect(() => {
     const storedSessionId = localStorage.getItem("docmind_session_id")
 
     if (storedSessionId) {
@@ -51,21 +58,29 @@ export default function Home() {
   }, [])
 
   async function loadSessionData(targetSessionId: string) {
+    if (!userId) return
+
     setIsLoadingSession(true)
 
     try {
-      const sessionData = await sessionsService.getSession(targetSessionId)
+      const sessionData = await sessionsService.getSession(targetSessionId, userId)
 
       setMessages(mapSessionMessagesToChatMessages(sessionData.messages))
       setSelectedDocs(sessionData.document_ids ?? [])
     } catch (error) {
       console.error("Error loading session data:", error)
+      const errorMessage = error instanceof Error && error.message.includes('No se puede conectar')
+        ? "No se puede conectar al servidor backend. Asegúrate de que esté corriendo en http://localhost:8000"
+        : "Error al cargar los datos de la sesión."
+      alert(errorMessage)
       setMessages([])
       setSelectedDocs([])
     } finally {
       setIsLoadingSession(false)
     }
   }
+
+  const loadSessionDataMemo = useCallback(loadSessionData, [userId])
 
   useEffect(() => {
     if (!sessionId) return
@@ -75,26 +90,33 @@ export default function Home() {
     if (previousSessionIdRef.current === sessionId) return
 
     previousSessionIdRef.current = sessionId
-    void loadSessionData(sessionId)
-  }, [sessionId])
+    void loadSessionDataMemo(sessionId)
+  }, [sessionId, loadSessionDataMemo])
 
   async function loadDocs() {
+    if (!userId) return
+
     setIsLoadingDocuments(true)
 
     try {
-      const res = await documentsService.listDocuments()
+      const res = await documentsService.listDocuments(userId)
       setDocuments(res.documents)
     } catch (error) {
       console.error(error)
-      alert("No se pudieron cargar los documentos.")
+      const errorMessage = error instanceof Error && error.message.includes('No se puede conectar')
+        ? "No se puede conectar al servidor backend. Asegúrate de que esté corriendo en http://localhost:8000"
+        : "No se pudieron cargar los documentos."
+      alert(errorMessage)
     } finally {
       setIsLoadingDocuments(false)
     }
   }
 
+  const loadDocsMemo = useCallback(loadDocs, [userId])
+
   useEffect(() => {
-    void loadDocs()
-  }, [])
+    void loadDocsMemo()
+  }, [loadDocsMemo])
 
   function toggleDoc(id: string) {
     setSelectedDocs((prev) =>
@@ -103,21 +125,26 @@ export default function Home() {
   }
 
   async function upload(file: File, type: string = "docs") {
+    if (!userId) return
+
     setIsUploading(true)
 
     try {
-      await documentsService.uploadDocument(file, type)
+      await documentsService.uploadDocument(file, type, userId)
       await loadDocs()
     } catch (error) {
       console.error(error)
-      alert("No se pudo subir el PDF.")
+      const errorMessage = error instanceof Error && error.message.includes('No se puede conectar')
+        ? "No se puede conectar al servidor backend. Asegúrate de que esté corriendo en http://localhost:8000"
+        : "No se pudo subir el PDF."
+      alert(errorMessage)
     } finally {
       setIsUploading(false)
     }
   }
 
   async function send() {
-    if (!question.trim() || !hasSelectedDocs || isSending || !sessionId) return
+    if (!question.trim() || !hasSelectedDocs || isSending || !sessionId || !userId) return
 
     const currentQuestion = question.trim()
 
@@ -142,6 +169,7 @@ export default function Home() {
 
     try {
       const res = await chatService.sendMessage({
+        user_id: userId,
         session_id: sessionId,
         document_ids: selectedDocs,
         message: currentQuestion,
@@ -170,7 +198,9 @@ export default function Home() {
                 id: loadingMessageId,
                 role: "assistant",
                 content:
-                  "Ocurrió un error al obtener la respuesta del asistente.",
+                  error instanceof Error && error.message.includes('No se puede conectar')
+                    ? "No se puede conectar al servidor backend. Asegúrate de que esté corriendo en http://localhost:8000"
+                    : "Ocurrió un error al obtener la respuesta del asistente.",
                 isLoading: false,
               }
             : message
@@ -243,7 +273,8 @@ export default function Home() {
             onUpload={upload}
             isUploading={isUploading}
             isLoadingDocuments={isLoadingDocuments}
-            loadDocs={loadDocs}
+            loadDocs={loadDocsMemo}
+            userId={userId}
           />
 
           <section className="flex min-h-[70vh] flex-col rounded-[28px] border border-[#26324A] bg-[linear-gradient(180deg,#121A2B_0%,#101827_100%)] p-5 shadow-[0_20px_40px_rgba(0,0,0,0.18)]">
@@ -290,7 +321,8 @@ export default function Home() {
                       isLoadingSession ||
                       !question.trim() ||
                       !hasSelectedDocs ||
-                      !sessionId
+                      !sessionId ||
+                      !userId
                     }
                     className="rounded-2xl bg-[#4F8CFF] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#3D78E6] disabled:cursor-not-allowed disabled:opacity-50"
                   >

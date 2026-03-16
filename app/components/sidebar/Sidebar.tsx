@@ -16,6 +16,7 @@ interface SidebarProps {
   isUploading: boolean
   isLoadingDocuments: boolean
   loadDocs: () => Promise<void>
+  userId: string | null
 }
 
 export default function Sidebar({
@@ -28,6 +29,7 @@ export default function Sidebar({
   isUploading,
   isLoadingDocuments,
   loadDocs,
+  userId,
 }: SidebarProps) {
   const createNewSession = () => {
     const newSessionId = crypto.randomUUID()
@@ -48,6 +50,7 @@ export default function Sidebar({
         <SessionManager
           currentSessionId={currentSessionId}
           onSessionChange={onSessionChange}
+          userId={userId}
         />
 
         <SidebarSection

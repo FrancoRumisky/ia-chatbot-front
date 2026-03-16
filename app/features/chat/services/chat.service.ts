@@ -8,12 +8,18 @@ class ChatService {
   async sendMessage(
     payload: ChatRequest
   ): Promise<ChatResponse> {
+    if (!payload.user_id) {
+      throw new Error("user_id is required")
+    }
     return apiClient.postJSON("/chat", payload)
   }
 
   async *sendMessageStream(
     payload: ChatRequest
   ): AsyncGenerator<string> {
+    if (!payload.user_id) {
+      throw new Error("user_id is required")
+    }
     const response = await fetch(`${apiClient.baseURL}/chat/stream`, {
       method: "POST",
       headers: {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import SidebarSection from "@/components/sidebar/SidebarSection"
 import SidebarSessionItem from "@/components/sidebar/SidebarSessionItem"
 import { sessionsService, type SessionItem } from "../services/sessions.service"
@@ -8,6 +8,7 @@ import { sessionsService, type SessionItem } from "../services/sessions.service"
 interface Props {
   currentSessionId: string | null
   onSessionChange: (sessionId: string) => void
+  userId: string | null
 }
 
 function sortSessionsByUpdatedAt(sessions: SessionItem[]): SessionItem[] {
@@ -21,20 +22,23 @@ function sortSessionsByUpdatedAt(sessions: SessionItem[]): SessionItem[] {
 export default function SessionManager({
   currentSessionId,
   onSessionChange,
+  userId,
 }: Props) {
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
   async function loadSessions() {
+    if (!userId) return
+
     setIsLoading(true)
 
     try {
-      const response = await sessionsService.listSessions()
+      const response = await sessionsService.listSessions(userId)
 
       const enrichedSessions = await Promise.all(
         response.sessions.map(async (session) => {
           try {
-            const sessionData = await sessionsService.getSession(session.id)
+            const sessionData = await sessionsService.getSession(session.id, userId)
             const messageCount = sessionData.messages.length
 
             return {
@@ -53,15 +57,21 @@ export default function SessionManager({
       setSessions(sortSessionsByUpdatedAt(enrichedSessions))
     } catch (error) {
       console.error("Error loading sessions:", error)
+      const errorMessage = error instanceof Error && error.message.includes('No se puede conectar')
+        ? "No se puede conectar al servidor backend. Asegúrate de que esté corriendo en http://localhost:8000"
+        : "Error al cargar las sesiones."
+      alert(errorMessage)
       setSessions([])
     } finally {
       setIsLoading(false)
     }
   }
 
+  const loadSessionsMemo = useCallback(loadSessions, [userId])
+
   useEffect(() => {
-    void loadSessions()
-  }, [currentSessionId])
+    void loadSessionsMemo()
+  }, [currentSessionId, loadSessionsMemo])
 
   const hasSessions = useMemo(() => sessions.length > 0, [sessions])
 
@@ -71,7 +81,7 @@ export default function SessionManager({
       action={
         <button
           type="button"
-          onClick={() => void loadSessions()}
+          onClick={() => void loadSessionsMemo()}
           className="rounded-xl border border-[#26324A] px-2.5 py-1.5 text-[11px] text-[#A7B4CE] transition hover:border-[#4F8CFF] hover:text-white"
         >
           Recargar

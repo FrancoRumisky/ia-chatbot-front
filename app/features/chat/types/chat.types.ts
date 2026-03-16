@@ -1,4 +1,5 @@
 export interface ChatRequest {
+  user_id: string
   session_id: string
   document_ids: string[]
   message: string
